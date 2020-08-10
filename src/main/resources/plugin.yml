@@ -1,17 +1,4 @@
 main: com.rogue.adminchat.AdminChat
 name: Admin-Chat
-prefix: AdminChat
-description: Allows simple communication between admins
 version: ${project.version}
-authors: [1Rogue, h3lix]
-url: http://dev.bukkit.org/bukkit-plugins/adminchat
-permissions:
-  adminchat.*:
-    default: OP
-    children:
-    - adminchat.channel.*
-    - adminchat.reload
-    - adminchat.muteall
-commands:
-  adminchat:
-    description: Adminchat's main command interface
+authors: [Takacick]

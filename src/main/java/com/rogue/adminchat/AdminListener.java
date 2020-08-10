@@ -17,17 +17,17 @@
 package com.rogue.adminchat;
 
 import java.util.Map;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
-import org.bukkit.event.Listener;
-import org.bukkit.event.player.AsyncPlayerChatEvent;
-import org.bukkit.event.player.PlayerJoinEvent;
+
+import com.rogue.adminchat.command.Command;
+import net.md_5.bungee.api.connection.ProxiedPlayer;
+import net.md_5.bungee.api.event.ChatEvent;
+import net.md_5.bungee.api.plugin.Listener;
+import net.md_5.bungee.event.EventHandler;
 
 /**
- *
- * @since 1.2.0
  * @author 1Rogue
  * @version 1.3.0
+ * @since 1.2.0
  */
 public class AdminListener implements Listener {
 
@@ -41,38 +41,21 @@ public class AdminListener implements Listener {
      * Makes players who have toggled adminchat send chat to the appropriate
      * channels
      *
-     * @since 1.2.0
-     * @version 1.3.0
-     *
      * @param event AsyncPlayerChatEvent instance
-     */
-    @EventHandler(priority = EventPriority.NORMAL)
-    public void onAsyncPlayerChat(AsyncPlayerChatEvent event) {
-        final Map<String, String> toggled;
-        final String name = event.getPlayer().getName();
-        synchronized (toggled = this.plugin.getCommandHandler().getToggled()) {
-            String chan = toggled.get(name);
-            if (chan != null) {
-                event.setCancelled(true);
-                plugin.getChannelManager().sendMessage(toggled.get(name), name, event.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Sends a notification to ops/players with all of the plugin's permissions
-     *
+     * @version 1.3.0
      * @since 1.2.0
-     * @versino 1.2.1
-     *
-     * @param e The join event
      */
-    @EventHandler(priority = EventPriority.NORMAL)
-    public void onPlayerJoin(PlayerJoinEvent e) {
-        if (e.getPlayer().hasPermission("adminchat.updatenotice")) {
-            if (plugin.isOutOfDate()) {
-                plugin.communicate(e.getPlayer(), "An update is available for Adminchat!");
-            }
+    @EventHandler
+    public void onChat(ChatEvent event) {
+        if (event.getMessage().startsWith("/")) {
+            return;
+        }
+
+        final String name = ((ProxiedPlayer) event.getSender()).getName();
+        String chan = Command.toggled.get(name);
+        if (chan != null) {
+            event.setCancelled(true);
+            plugin.getChannelManager().sendMessage(chan, name, event.getMessage());
         }
     }
 }

@@ -17,34 +17,26 @@
 package com.rogue.adminchat.channel;
 
 import com.rogue.adminchat.AdminChat;
-import java.io.File;
-import java.io.IOException;
+
+import java.io.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.command.PluginCommand;
-import org.bukkit.command.SimpleCommandMap;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.permissions.Permission;
-import org.bukkit.permissions.PermissionDefault;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.SimplePluginManager;
+
+import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.connection.ProxiedPlayer;
+import net.md_5.bungee.config.Configuration;
+import net.md_5.bungee.config.ConfigurationProvider;
+import net.md_5.bungee.config.YamlConfiguration;
 
 /**
- *
- * @since 1.3.0
  * @author 1Rogue
  * @version 1.3.1
+ * @since 1.3.0
  */
 public class ChannelManager {
 
@@ -64,11 +56,6 @@ public class ChannelManager {
     /**
      * Gets the channel configurations from the channels.yml file, or loads a
      * new one if it does not exist. Also registers appropriate permissions
-     *
-     * @since 1.3.0
-     * @version 1.3.1
-     *
-     * @throws IOException When file is not readable
      */
     private void setup() throws IOException {
         if (this.plugin.getDataFolder().exists()) {
@@ -76,127 +63,32 @@ public class ChannelManager {
         }
         File chan = new File(this.plugin.getDataFolder() + File.separator + "channels.yml");
         if (!chan.exists()) {
-            this.plugin.saveResource("channels.yml", true);
+            copyDefaultConfigs("channels.yml", chan);
         }
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(chan);
-        ConfigurationSection sect = yaml.getConfigurationSection("channels");
-        if (sect == null) {
-            this.plugin.getLogger().severe("No channels found, disabling!");
-            Bukkit.getPluginManager().disablePlugin(this.plugin);
+
+        Configuration yaml;
+        try {
+            yaml = ConfigurationProvider.getProvider(YamlConfiguration.class).load(chan);
+        } catch (IOException e) {
+            e.printStackTrace();
             return;
         }
-        for (String s : sect.getKeys(false)) {
+        if (yaml.getSection("channels") == null) {
+            this.plugin.getLogger().severe("No channels found, disabling!");
+            return;
+        }
+        for (String s : yaml.getSection("channels").getKeys()) {
             String format = yaml.getString("channels." + s + ".format");
             String cmd = yaml.getString("channels." + s + ".command");
             if (format != null && cmd != null && !cmd.equalsIgnoreCase("adminchat")) {
                 this.plugin.getLogger().log(Level.CONFIG, "Adding command {0}!", cmd);
                 this.channels.put(cmd, new Channel(s, cmd, format));
-                Permission perm = new Permission("adminchat.channel." + s);
-                Permission read = new Permission("adminchat.channel." + s + ".read");
-                Permission send = new Permission("adminchat.channel." + s + ".send");
-                Permission mute = new Permission("adminchat.channel." + s + ".mute");
-                perm.setDefault(PermissionDefault.OP);
-                perm.addParent("adminchat.channel.*", true);
-                read.addParent("adminchat.channel." + s, true);
-                send.addParent("adminchat.channel." + s, true);
-                mute.addParent("adminchat.mute." + s, true);
-                mute.addParent("adminchat.muteall", true);
-                try {
-                    this.plugin.getLogger().log(Level.CONFIG, "Registering {0}", perm.getName());
-                    Bukkit.getPluginManager().addPermission(perm);
-                    Bukkit.getPluginManager().addPermission(read);
-                    Bukkit.getPluginManager().addPermission(send);
-                    Bukkit.getPluginManager().addPermission(mute);
-                } catch (IllegalArgumentException e) {
-                    this.plugin.getLogger().log(Level.WARNING, "The permission {0} is already registered!", perm.getName());
-                }
             }
         }
-        register();
-    }
-
-    /**
-     * Registers the channel commands with bukkit's command map dynamically. If
-     * a command already exists, it will be prefixed with a period.
-     *
-     * @since 1.3.0
-     * @version 1.3.0
-     */
-    private void register() {
-        SimpleCommandMap scm;
-        try {
-            Field f = SimplePluginManager.class.getDeclaredField("commandMap");
-            f.setAccessible(true);
-            synchronized (scm = (SimpleCommandMap) f.get(Bukkit.getPluginManager())) {
-                if (!this.channels.keySet().isEmpty()) {
-                    for (String s : this.channels.keySet()) {
-                        PluginCommand pc = this.getCommand(s, this.plugin);
-                        PluginCommand toggle = this.getCommand(s + "toggle", this.plugin);
-                        PluginCommand mute = this.getCommand(s + "mute", this.plugin);
-                        PluginCommand unmute = this.getCommand(s + "unmute", this.plugin);
-                        if (pc != null && toggle != null && mute != null && unmute != null) {
-                            scm.register(".", pc);
-                            scm.register(".", toggle);
-                            scm.register(".", mute);
-                            scm.register(".", unmute);
-                        }
-                    }
-                }
-            }
-        } catch (NoSuchFieldException ex) {
-            this.plugin.getLogger().log(Level.SEVERE, "commandMap field does not exist in SimplePluginManager!", ex);
-        } catch (SecurityException ex) {
-            this.plugin.getLogger().log(Level.SEVERE, "SecurityException accessing commandMap in SimplePluginManager!", ex);
-        } catch (IllegalArgumentException ex) {
-            this.plugin.getLogger().log(Level.SEVERE, "Bad arguments passed to register method in SimplePluginManager!", ex);
-        } catch (IllegalAccessException ex) {
-            this.plugin.getLogger().log(Level.SEVERE, "IllegalAccessException in SimplePluginManager!", ex);
-        }
-    }
-
-    /**
-     * Gets a PluginCommand object from bukkit
-     *
-     * @since 1.3.0
-     * @version 1.3.0
-     *
-     * @param name Command Label
-     * @param plugin Plugin instance
-     * 
-     * @return New PluginCommand object, or null upon an exception
-     */
-    private PluginCommand getCommand(String name, Plugin plugin) {
-        PluginCommand command = null;
-
-        try {
-            Constructor<PluginCommand> c = PluginCommand.class.getDeclaredConstructor(String.class, Plugin.class);
-            c.setAccessible(true);
-
-            command = c.newInstance(name, plugin);
-        } catch (SecurityException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        } catch (IllegalArgumentException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        } catch (IllegalAccessException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        } catch (InstantiationException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        } catch (InvocationTargetException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        } catch (NoSuchMethodException e) {
-            this.plugin.getLogger().log(Level.SEVERE, null, e);
-        }
-
-        return command;
     }
 
     /**
      * Returns a map of the current channels, with the command as their key
-     *
-     * @since 1.3.0
-     * @version 1.3.0
-     *
-     * @return A map of the channels
      */
     public Map<String, Channel> getChannels() {
         return this.channels;
@@ -204,15 +96,6 @@ public class ChannelManager {
 
     /**
      * Returns a Channel by a requested key. This method is thread-safe.
-     *
-     * @since 1.3.0
-     * @version 1.3.0
-     *
-     * @param name The channel command
-     * 
-     * @throws ChannelNotFoundException If no channel is found by the provided name
-     * 
-     * @return The channel object, null if channel does not exist
      */
     public synchronized Channel getChannel(String name) throws ChannelNotFoundException {
         Channel chan = this.channels.get(name);
@@ -222,15 +105,14 @@ public class ChannelManager {
             throw new ChannelNotFoundException("Unknown Channel: &c" + name);
         }
     }
-    
+
     /**
      * Checks if there is a channel by the command name
-     * 
-     * @since 1.3.2
-     * @version 1.3.2
-     * 
+     *
      * @param name The command used to call the channel
      * @return True if exists, false otherwise
+     * @version 1.3.2
+     * @since 1.3.2
      */
     public synchronized boolean isChannel(String name) {
         return this.channels.containsKey(name);
@@ -239,12 +121,11 @@ public class ChannelManager {
     /**
      * Parses the format string and sends it to players
      *
-     * @since 1.2.0
-     * @version 1.3.1
-     *
      * @param channel The channel to send to, based on command
-     * @param name The user sending the message
+     * @param name    The user sending the message
      * @param message The message to send to others in the channel
+     * @version 1.3.1
+     * @since 1.2.0
      */
     public void sendMessage(String channel, String name, String message) {
         if (this.isMuted(name, channel)) {
@@ -255,8 +136,14 @@ public class ChannelManager {
                 String send = chan.getFormat();
                 send = send.replace("{NAME}", name);
                 send = send.replace("{MESSAGE}", message);
-                Bukkit.broadcast(ChatColor.translateAlternateColorCodes('&', send), "adminchat.channel." + chan.getName() + ".read");
+
+                for (ProxiedPlayer player : AdminChat.getInstance().getProxy().getPlayers()) {
+                    if (player.hasPermission("adminchat.channel." + chan.getName())) {
+                        player.sendMessage(send.replace("&", "§").replace("{SERVER}", player.getServer().getInfo().getName()));
+                    }
+                }
             } catch (ChannelNotFoundException ex) {
+                ex.printStackTrace();
                 this.plugin.getLogger().log(Level.SEVERE, ex.getMessage(), ex);
                 this.plugin.communicate(name, ex.getMessage());
             }
@@ -267,15 +154,12 @@ public class ChannelManager {
      * Adds passed player names to a mute list. Does not verify the names are
      * players.
      *
-     * @since 1.3.2
-     * @version 1.3.2
-     *
      * @param channel Channel to mute in
-     * @param names Names to mute
-     * 
-     * @throws ChannelNotFoundException If no channel is found by the provided name
-     * 
+     * @param names   Names to mute
      * @return True if all names were successfully added.
+     * @throws ChannelNotFoundException If no channel is found by the provided name
+     * @version 1.3.2
+     * @since 1.3.2
      */
     public void mute(String channel, String... names) throws ChannelNotFoundException {
         if (channel != null) {
@@ -283,14 +167,12 @@ public class ChannelManager {
                 throw new ChannelNotFoundException("Unknown channel: " + channel);
             } else {
                 for (String name : names) {
-                    synchronized (this.mutes) {
-                        List<String> muted = this.mutes.remove(name);
-                        if (muted != null) {
-                            muted.add(channel);
-                            this.mutes.put(name, muted);
-                        } else {
-                            this.mutes.put(name, Arrays.asList(new String[]{channel}));
-                        }
+                    List<String> muted = new ArrayList<>();
+                    if (this.mutes.containsKey(name))
+                        muted.addAll(this.mutes.get(name));
+                    muted.add(channel);
+                    if (muted != null) {
+                        this.mutes.put(name, muted);
                     }
                 }
             }
@@ -305,14 +187,12 @@ public class ChannelManager {
 
     /**
      * Unmutes a player within a channel, or globally
-     * 
-     * @since 1.3.2
-     * @version 1.3.2
-     * 
+     *
      * @param channel The channel to mute in, null if global
-     * @param names Players to mute by name
-     * 
+     * @param names   Players to mute by name
      * @throws ChannelNotFoundException If no channel is found by the provided name
+     * @version 1.3.2
+     * @since 1.3.2
      */
     public void unmute(String channel, String... names) throws ChannelNotFoundException {
         if (channel != null) {
@@ -320,13 +200,15 @@ public class ChannelManager {
                 throw new ChannelNotFoundException("Unknown Channel: " + channel);
             } else {
                 for (String name : names) {
-                    synchronized (this.mutes) {
-                        List<String> muted = this.mutes.remove(name);
+                    List<String> muted = new ArrayList<>();
+                    if (this.mutes.containsKey(name)) {
+                        muted.addAll(this.mutes.get(name));
                         if (muted != null) {
-                            muted.add(channel);
-                            this.mutes.put(name, muted);
-                        } else {
-                            this.mutes.put(name, Arrays.asList(channel));
+                            muted.remove(channel);
+                            if (muted.isEmpty())
+                                this.mutes.remove(name);
+                            else
+                                this.mutes.put(name, muted);
                         }
                     }
                 }
@@ -343,9 +225,8 @@ public class ChannelManager {
     /**
      * Returns whether or not a player is muted in a channel
      *
-     * @param name The name to check
+     * @param name    The name to check
      * @param channel The channel to check against, null for a global check
-     * 
      * @return True if muted in the channel, false otherwise
      */
     public synchronized boolean isMuted(String name, String channel) {
@@ -354,6 +235,28 @@ public class ChannelManager {
             return chans == null || chans.contains(channel);
         } else {
             return false;
+        }
+    }
+
+    /**
+     * Copy a file from the ressource (In Jar file) to the actual server)
+     *
+     * @param ressourceFile Name of the file (ex: config.yml)
+     * @param targetFile    File to transfer the data
+     */
+    private void copyDefaultConfigs(String ressourceFile, File targetFile) {
+        try {
+            InputStream ressource = AdminChat.getInstance().getResourceAsStream(ressourceFile);
+            OutputStream out = new FileOutputStream(targetFile);
+            byte[] buf = new byte[1024];
+            int len;
+            while ((len = ressource.read(buf)) > 0) // Copying the data to the new file
+            {
+                out.write(buf, 0, len);
+            }
+            out.close();
+            ressource.close();
+        } catch (Exception ex) {
         }
     }
 }
