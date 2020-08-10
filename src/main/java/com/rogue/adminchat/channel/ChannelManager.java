@@ -137,9 +137,11 @@ public class ChannelManager {
                 send = send.replace("{NAME}", name);
                 send = send.replace("{MESSAGE}", message);
 
+                ProxiedPlayer target = AdminChat.getInstance().getProxy().getPlayer(name);
+
                 for (ProxiedPlayer player : AdminChat.getInstance().getProxy().getPlayers()) {
                     if (player.hasPermission("adminchat.channel." + chan.getName())) {
-                        player.sendMessage(send.replace("&", "§").replace("{SERVER}", player.getServer().getInfo().getName()));
+                        player.sendMessage(send.replace("&", "§").replace("{SERVER}", target.getServer().getInfo().getName()));
                     }
                 }
             } catch (ChannelNotFoundException ex) {
